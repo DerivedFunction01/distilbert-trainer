@@ -10,9 +10,7 @@ from typing import Iterable
 
 from tqdm.auto import tqdm
 
-from shared.paths import CACHE_ROOT
-
-ARTIFACT_ROOT = Path("artifacts")
+from shared.paths import ARTIFACT_ROOT, CACHE_ROOT
 ARCHIVE_NAME_TEMPLATE = "distilbert_{subdir_name}_cache.zip"
 
 

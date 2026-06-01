@@ -19,10 +19,17 @@ from transformers import (
     TrainingArguments,
 )
 
+from shared.paths import (
+    DEFAULT_MODEL_NAME,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_TOKENIZED_CACHE_DIR,
+    HF_TOKEN_PATH,
+)
+
 # %%
 CONFIG = {
-    "model_name": "distilbert/distilbert-base-uncased",
-    "output_dir": "./distilbert-classifier",
+    "model_name": DEFAULT_MODEL_NAME,
+    "output_dir": str(DEFAULT_OUTPUT_DIR),
     "max_length": 512,
     "num_train_epochs": 2,
     "learning_rate": 2e-5,
@@ -41,9 +48,7 @@ CONFIG = {
 
 WARMUP_RATIO = 0.1
 
-BASE_DIR = Path(".")
-HF_TOKEN_PATH = BASE_DIR / "hf_token"
-TOKENIZED_CACHE_DIR = BASE_DIR / ".cache" / "test" / "tokenized"
+TOKENIZED_CACHE_DIR = DEFAULT_TOKENIZED_CACHE_DIR
 TOKENIZED_CACHE_META = TOKENIZED_CACHE_DIR / "dataset.meta.json"
 
 random.seed(CONFIG["seed"])
@@ -169,7 +174,13 @@ model = AutoModelForSequenceClassification.from_pretrained(
 )
 
 def compute_metrics(eval_pred):
-    pass
+    logits, labels = eval_pred
+    predictions = np.argmax(logits, axis=-1)
+    return {
+        "binary_f1": f1_score(labels, predictions, zero_division=0),
+        "binary_precision": precision_score(labels, predictions, zero_division=0),
+        "binary_recall": recall_score(labels, predictions, zero_division=0),
+    }
 
 
 trainer = Trainer(

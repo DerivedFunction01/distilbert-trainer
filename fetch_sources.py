@@ -6,10 +6,8 @@ import shutil
 from pathlib import Path
 
 from shared.archive import cache_has_archive, cache_has_tokenized_cache, ensure_cache_archive_extracted
-from shared.paths import CACHE_ROOT
+from shared.paths import ARTIFACT_ROOT, CACHE_ROOT
 from tqdm.auto import tqdm
-
-ARTIFACT_ROOT = Path("artifacts")
 
 
 def build_all_sources() -> None:
@@ -62,7 +60,7 @@ def reconcile_cache_subdir(subdir_name: str) -> Path:
 
     if has_cache and has_archive:
         print(f"{subdir_name}: cache and archive already exist, skipping")
-        return Path("artifacts") / f"xlm_roberta_other_{subdir_name}_cache.zip"
+        return ARTIFACT_ROOT / f"distilbert_{subdir_name}_cache.zip"
 
     if has_cache and not has_archive:
         return zip_cache_subdir(subdir_name)
@@ -70,7 +68,7 @@ def reconcile_cache_subdir(subdir_name: str) -> Path:
     if has_archive and not has_cache:
         print(f"{subdir_name}: tokenized cache missing, restoring from archive")
         ensure_cache_archive_extracted(subdir_name)
-        return Path("artifacts") / f"xlm_roberta_other_{subdir_name}_cache.zip"
+        return ARTIFACT_ROOT / f"distilbert_{subdir_name}_cache.zip"
 
     print(f"{subdir_name}: cache and archive both missing, rebuilding cache locally")
     build_cache_subdir(subdir_name)
