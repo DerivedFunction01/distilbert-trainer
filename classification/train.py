@@ -5,6 +5,7 @@ import math
 import argparse
 import random
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,7 @@ from shared.data_pipeline import build_and_cache_dataset
 from shared.paths import HF_TOKEN_PATH
 
 WARMUP_RATIO = 0.1
+SUPPORTED_TASK_TYPES = {"classification", "multi_label_classification"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -85,7 +87,12 @@ def compute_step_interval(
 
 
 def make_training_args(
-    *, config: dict[str, object], warmup_steps: int, eval_steps: int, save_steps: int
+    *,
+    config: dict[str, object],
+    warmup_steps: int,
+    eval_steps: int,
+    save_steps: int,
+    metric_for_best_model: str,
 ) -> TrainingArguments:
     training = config["training"]
     model = config["model"]
@@ -107,12 +114,72 @@ def make_training_args(
         eval_steps=eval_steps,
         save_steps=save_steps,
         load_best_model_at_end=True,
-        metric_for_best_model=f'{training["metric_prefix"]}_f1',
+        metric_for_best_model=metric_for_best_model,
         greater_is_better=True,
         seed=training["seed"],
         report_to="tensorboard",
         push_to_hub=True,
     )
+
+
+def get_metric_for_best_model(task_type: str, metric_prefix: str) -> str:
+    if task_type == "classification":
+        return f"{metric_prefix}_f1"
+    if task_type == "multi_label_classification":
+        return f"{metric_prefix}_f1_micro"
+    raise ValueError(f"Unsupported task_type for this trainer: {task_type!r}")
+
+
+def get_probability_transform(task_type: str) -> Callable[[np.ndarray], np.ndarray]:
+    if task_type == "classification":
+        return _single_label_probabilities
+    if task_type == "multi_label_classification":
+        return _multi_label_probabilities
+    raise ValueError(f"Unsupported task_type for this trainer: {task_type!r}")
+
+
+def _single_label_probabilities(logits: np.ndarray) -> np.ndarray:
+    if logits.ndim == 1 or logits.shape[-1] == 1:
+        return 1.0 / (1.0 + np.exp(-logits.reshape(-1)))
+
+    shifted = logits - np.max(logits, axis=-1, keepdims=True)
+    exp_logits = np.exp(shifted)
+    return exp_logits[:, 1] / np.sum(exp_logits, axis=-1)
+
+
+def _multi_label_probabilities(logits: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-logits))
+
+
+def _compute_single_label_metrics(
+    labels: np.ndarray,
+    predictions: np.ndarray,
+    *,
+    metric_prefix: str,
+) -> dict[str, float]:
+    return {
+        f"{metric_prefix}_f1": f1_score(labels, predictions, zero_division=0),
+        f"{metric_prefix}_precision": precision_score(labels, predictions, zero_division=0),
+        f"{metric_prefix}_recall": recall_score(labels, predictions, zero_division=0),
+    }
+
+
+def _compute_multi_label_metrics(
+    labels: np.ndarray,
+    predictions: np.ndarray,
+    *,
+    metric_prefix: str,
+) -> dict[str, float]:
+    return {
+        f"{metric_prefix}_f1_micro": f1_score(labels, predictions, average="micro", zero_division=0),
+        f"{metric_prefix}_f1_macro": f1_score(labels, predictions, average="macro", zero_division=0),
+        f"{metric_prefix}_precision_micro": precision_score(
+            labels, predictions, average="micro", zero_division=0
+        ),
+        f"{metric_prefix}_recall_micro": recall_score(
+            labels, predictions, average="micro", zero_division=0
+        ),
+    }
 
 
 def main() -> None:
@@ -122,6 +189,11 @@ def main() -> None:
     tokenization_cfg = config["tokenization"]
     training_cfg = config["training"]
     task_type = config["task_type"]
+
+    if task_type not in SUPPORTED_TASK_TYPES:
+        raise ValueError(
+            f"Unsupported task_type: {task_type!r}. Supported values: {sorted(SUPPORTED_TASK_TYPES)}"
+        )
 
     random.seed(training_cfg["seed"])
     np.random.seed(training_cfg["seed"])
@@ -162,28 +234,20 @@ def main() -> None:
         num_labels=model_cfg["num_labels"],
         token=hf_token,
     )
+    if task_type == "multi_label_classification":
+        model.config.problem_type = "multi_label_classification"
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         logits = np.asarray(logits)
         labels = np.asarray(labels)
 
-        if logits.ndim == 1 or logits.shape[-1] == 1:
-            probabilities = 1.0 / (1.0 + np.exp(-logits.reshape(-1)))
-        else:
-            shifted = logits - np.max(logits, axis=-1, keepdims=True)
-            exp_logits = np.exp(shifted)
-            probabilities = exp_logits[:, 1] / np.sum(exp_logits, axis=-1)
-
+        probabilities = get_probability_transform(task_type)(logits)
         predictions = (probabilities >= training_cfg["threshold"]).astype(int)
-        if task_type != "classification":
-            raise ValueError(f"Unsupported task_type for this trainer: {task_type!r}")
         metric_prefix = training_cfg["metric_prefix"]
-        return {
-            f"{metric_prefix}_f1": f1_score(labels, predictions, zero_division=0),
-            f"{metric_prefix}_precision": precision_score(labels, predictions, zero_division=0),
-            f"{metric_prefix}_recall": recall_score(labels, predictions, zero_division=0),
-        }
+        if task_type == "classification":
+            return _compute_single_label_metrics(labels, predictions, metric_prefix=metric_prefix)
+        return _compute_multi_label_metrics(labels, predictions, metric_prefix=metric_prefix)
 
     trainer = Trainer(
         model=model,
@@ -192,6 +256,7 @@ def main() -> None:
             warmup_steps=warmup_steps,
             eval_steps=eval_interval,
             save_steps=save_interval,
+            metric_for_best_model=get_metric_for_best_model(task_type, training_cfg["metric_prefix"]),
         ),
         train_dataset=ds["train"],
         eval_dataset=ds["val"],
