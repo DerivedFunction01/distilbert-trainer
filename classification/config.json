@@ -8,6 +8,18 @@
   "dataset": {
     "label_column": "label",
     "text_columns": ["text"],
+    "text_perturbation": {
+      "source_column": "text",
+      "output_column": "text",
+      "lang_column": null,
+      "num_variants": 1,
+      "mutation_config": {
+        "keep_original": true,
+        "sentence_mutation_prob": 0.25,
+        "word_casing_prob": 0.2,
+        "char_noise_prob": 0.15
+      }
+    },
     "label_transform": {
       "type": "single_to_multi_label",
       "source_column": "label",

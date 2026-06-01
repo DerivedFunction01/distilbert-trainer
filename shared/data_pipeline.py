@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import Any
 
 from datasets import Dataset, DatasetDict, load_from_disk
 from transformers import AutoTokenizer
+from tqdm.auto import tqdm
 
 from shared.building import rows_to_dataset_dict
 from shared.fetch import load_hf_dataset, load_hf_dataset_dict
@@ -14,6 +16,7 @@ from shared.tokenization import (
     save_tokenized_dataset_cache,
     tokenize_dataset_dict,
 )
+from text_utils import MutationConfig, TextMutator
 
 
 def _resolve_path(value: str | Path) -> Path:
@@ -99,6 +102,98 @@ def _apply_label_transform(dataset: DatasetDict, dataset_cfg: dict[str, Any]) ->
 
     return DatasetDict({split_name: transform_split(split) for split_name, split in dataset.items()})
 
+
+def _mutation_config_from_dict(config: dict[str, Any] | None) -> MutationConfig:
+    if not config:
+        return MutationConfig()
+
+    allowed_keys = {
+        "keep_original",
+        "boundary_strip_prob",
+        "sentence_mutation_prob",
+        "sentence_casing_prob",
+        "word_casing_prob",
+        "spacing_noise_prob",
+        "char_noise_prob",
+        "accent_strip_prob",
+        "format_noise_prob",
+        "script_letter_prob",
+        "script_digit_prob",
+        "sentence_uppercase_prob",
+        "sentence_lowercase_prob",
+        "word_uppercase_prob",
+        "word_lowercase_prob",
+        "word_titlecase_prob",
+        "merge_word_prob",
+        "split_word_prob",
+        "ocr_char_prob",
+        "keyboard_char_prob",
+        "unicode_accent_char_prob",
+        "max_sentence_edits",
+        "max_word_edits",
+        "safe_accent_strip_langs",
+    }
+    unknown_keys = sorted(set(config) - allowed_keys)
+    if unknown_keys:
+        raise ValueError(f"Unknown mutation config keys: {unknown_keys}")
+
+    kwargs = dict(config)
+    if "safe_accent_strip_langs" in kwargs and kwargs["safe_accent_strip_langs"] is not None:
+        kwargs["safe_accent_strip_langs"] = set(kwargs["safe_accent_strip_langs"])
+    return MutationConfig(**kwargs)
+
+
+def _apply_text_perturbation(dataset: DatasetDict, dataset_cfg: dict[str, Any]) -> DatasetDict:
+    perturbation = dataset_cfg.get("text_perturbation")
+    if not perturbation:
+        return dataset
+
+    source_column = perturbation.get("source_column", dataset_cfg["text_columns"][0])
+    output_column = perturbation.get("output_column", source_column)
+    lang_column = perturbation.get("lang_column")
+    num_variants = int(perturbation.get("num_variants", 1))
+    if num_variants < 1:
+        raise ValueError("text_perturbation.num_variants must be >= 1")
+
+    mutation_config = _mutation_config_from_dict(perturbation.get("mutation_config"))
+    mutator = TextMutator(mutation_config)
+    base_seed = int(dataset_cfg.get("seed", 42))
+
+    def transform_split(split_name: str, split: Dataset) -> Dataset:
+        if num_variants == 1 and not mutation_config.keep_original:
+            raise ValueError("text_perturbation would drop all rows because keep_original is false and num_variants is 1")
+
+        seed_offset = abs(hash(split_name)) % (2**32)
+
+        transformed_rows: list[dict[str, Any]] = []
+        for row_index, row in enumerate(tqdm(split.to_list(), desc=f"Perturbing {split_name}", unit="row")):
+            text = row.get(source_column)
+            if not isinstance(text, str):
+                raise TypeError(f"Expected text column {source_column!r} to contain strings, got {type(text)!r}")
+
+            rng = random.Random(base_seed + seed_offset + row_index)
+            variants = mutator.augment(text, rng=rng, lang=row.get(lang_column) if lang_column else None)
+            if num_variants == 1:
+                chosen_variant = variants[0] if variants else text
+                mutated_row = dict(row)
+                mutated_row[output_column] = chosen_variant
+                transformed_rows.append(mutated_row)
+                continue
+
+            if mutation_config.keep_original:
+                transformed_rows.append(dict(row))
+
+            for variant in variants[:num_variants]:
+                mutated_row = dict(row)
+                mutated_row[output_column] = variant
+                transformed_rows.append(mutated_row)
+
+        if not transformed_rows:
+            return Dataset.from_dict({column: [] for column in split.column_names})
+        return Dataset.from_list(transformed_rows)
+
+    return DatasetDict({split_name: transform_split(split_name, split) for split_name, split in dataset.items()})
+
 def load_dataset_from_config(config: dict[str, Any]) -> DatasetDict:
     source = config["dataset"]["source"]
     source_type = source["type"]
@@ -152,6 +247,7 @@ def build_and_cache_dataset(config: dict[str, Any]) -> DatasetDict:
 
     raw_dataset = load_dataset_from_config(config)
     raw_dataset = _apply_label_transform(raw_dataset, dataset_cfg)
+    raw_dataset = _apply_text_perturbation(raw_dataset, dataset_cfg)
     tokenizer = AutoTokenizer.from_pretrained(config["model"]["name"])
     tokenized = tokenize_dataset_dict(
         raw_dataset,
