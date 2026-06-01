@@ -1,5 +1,5 @@
 {
-  "task_type": "binary_classification",
+  "task_type": "classification",
   "model": {
     "name": "distilbert/distilbert-base-uncased",
     "output_dir": "distilbert-classifier",

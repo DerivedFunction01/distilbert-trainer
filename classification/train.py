@@ -176,7 +176,7 @@ def main() -> None:
             probabilities = exp_logits[:, 1] / np.sum(exp_logits, axis=-1)
 
         predictions = (probabilities >= training_cfg["threshold"]).astype(int)
-        if task_type != "binary_classification":
+        if task_type != "classification":
             raise ValueError(f"Unsupported task_type for this trainer: {task_type!r}")
         metric_prefix = training_cfg["metric_prefix"]
         return {
