@@ -1,13 +1,24 @@
 {
-  "task_type": "classification",
+  "task_type": "multi_label_classification",
   "model": {
     "name": "distilbert/distilbert-base-uncased",
     "output_dir": "distilbert-classifier",
-    "num_labels": 2
+    "num_labels": 3
   },
   "dataset": {
     "label_column": "label",
     "text_columns": ["text"],
+    "label_transform": {
+      "type": "single_to_multi_label",
+      "source_column": "label",
+      "output_column": "labels",
+      "target_labels": ["negative", "positive", "mixed"],
+      "label_map": {
+        "0": ["negative"],
+        "1": ["positive"],
+        "2": ["mixed"]
+      }
+    },
     "source": {
       "type": "hf_dataset",
       "dataset_name": "rotten_tomatoes",
