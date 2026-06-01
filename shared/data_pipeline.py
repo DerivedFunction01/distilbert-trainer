@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +8,7 @@ from transformers import AutoTokenizer
 
 from shared.building import rows_to_dataset_dict
 from shared.fetch import load_hf_dataset, load_hf_dataset_dict
-from shared.paths import ROOT_DIR
+from shared.paths import resolve_repo_path
 from shared.tokenization import (
     load_tokenized_dataset_cache,
     save_tokenized_dataset_cache,
@@ -18,8 +17,7 @@ from shared.tokenization import (
 
 
 def _resolve_path(value: str | Path) -> Path:
-    path = Path(value)
-    return path if path.is_absolute() else ROOT_DIR / path
+    return resolve_repo_path(value)
 
 
 def load_dataset_from_config(config: dict[str, Any]) -> DatasetDict:
