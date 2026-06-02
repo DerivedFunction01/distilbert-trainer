@@ -262,7 +262,12 @@ def main() -> None:
 
     print(f"Loading model: {model_cfg['name']}")
     model_kwargs = {"token": hf_token}
-    if model_cfg.get("num_labels") is not None:
+    if task_type == "multi_label_classification" and label_metadata is not None:
+        inferred_num_labels = int(label_metadata["num_labels"])
+        model_kwargs["num_labels"] = inferred_num_labels
+        model_kwargs["id2label"] = dict(label_metadata["id2label"])
+        model_kwargs["label2id"] = dict(label_metadata["label2id"])
+    elif model_cfg.get("num_labels") is not None:
         model_kwargs["num_labels"] = int(model_cfg["num_labels"])
     model = AutoModelForSequenceClassification.from_pretrained(
         model_cfg["name"],
@@ -270,13 +275,10 @@ def main() -> None:
     )
     if task_type == "multi_label_classification":
         model.config.problem_type = "multi_label_classification"
-        inferred_num_labels = None
+        inferred_num_labels = int(label_metadata["num_labels"]) if label_metadata is not None else infer_num_labels_from_dataset(ds)
         if label_metadata is not None:
-            inferred_num_labels = int(label_metadata["num_labels"])
             model.config.label2id = dict(label_metadata["label2id"])
             model.config.id2label = dict(label_metadata["id2label"])
-        else:
-            inferred_num_labels = infer_num_labels_from_dataset(ds)
         configured_num_labels = model_cfg.get("num_labels")
         if configured_num_labels is not None and int(configured_num_labels) != inferred_num_labels:
             raise ValueError(
