@@ -7,6 +7,7 @@ import random
 import warnings
 from collections.abc import Callable
 import sys
+import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -200,6 +201,18 @@ def infer_num_labels_from_dataset(ds: DatasetDict) -> int:
     return num_labels
 
 
+def load_label_metadata(cache_dir: Path) -> dict[str, object] | None:
+    meta_path = cache_dir / "dataset.meta.json"
+    if not meta_path.exists():
+        return None
+    with meta_path.open(encoding="utf-8") as f:
+        meta = json.load(f)
+    label_metadata = meta.get("label_metadata")
+    if not isinstance(label_metadata, dict):
+        return None
+    return label_metadata
+
+
 def main() -> None:
     config = load_config()
     model_cfg = config["model"]
@@ -226,6 +239,7 @@ def main() -> None:
             login(token=hf_token, add_to_git_credential=False)
 
     ds = build_and_cache_dataset(config)
+    label_metadata = load_label_metadata(resolve_path(dataset_cfg["cache_dir"]))
 
     print(f"  Train: {len(ds['train']):,}")
     print(f"  Val:   {len(ds['val']):,}")
@@ -256,7 +270,13 @@ def main() -> None:
     )
     if task_type == "multi_label_classification":
         model.config.problem_type = "multi_label_classification"
-        inferred_num_labels = infer_num_labels_from_dataset(ds)
+        inferred_num_labels = None
+        if label_metadata is not None:
+            inferred_num_labels = int(label_metadata["num_labels"])
+            model.config.label2id = dict(label_metadata["label2id"])
+            model.config.id2label = dict(label_metadata["id2label"])
+        else:
+            inferred_num_labels = infer_num_labels_from_dataset(ds)
         configured_num_labels = model_cfg.get("num_labels")
         if configured_num_labels is not None and int(configured_num_labels) != inferred_num_labels:
             raise ValueError(

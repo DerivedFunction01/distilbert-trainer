@@ -84,10 +84,13 @@ def _infer_label_transform(
     return target_labels, label_map
 
 
-def _apply_label_transform(dataset: DatasetDict, dataset_cfg: dict[str, Any]) -> DatasetDict:
+def _apply_label_transform(
+    dataset: DatasetDict,
+    dataset_cfg: dict[str, Any],
+) -> tuple[DatasetDict, dict[str, Any] | None]:
     label_transform = dataset_cfg.get("label_transform")
     if not label_transform:
-        return dataset
+        return dataset, None
 
     if label_transform.get("type") != "single_to_multi_label":
         raise ValueError(f"Unsupported label_transform type: {label_transform.get('type')!r}")
@@ -169,7 +172,17 @@ def _apply_label_transform(dataset: DatasetDict, dataset_cfg: dict[str, Any]) ->
             return Dataset.from_dict({column: [] for column in split.column_names})
         return Dataset.from_list(transformed_rows)
 
-    return DatasetDict({split_name: transform_split(split_name, split) for split_name, split in dataset.items()})
+    label2id = {_to_label_lookup_key(label): index for index, label in enumerate(target_labels)}
+    id2label = {str(index): _to_label_lookup_key(label) for index, label in enumerate(target_labels)}
+    metadata = {
+        "label2id": label2id,
+        "id2label": id2label,
+        "num_labels": len(target_labels),
+        "label_column": source_column,
+        "output_column": output_column,
+        "task_type": "multi_label_classification",
+    }
+    return DatasetDict({split_name: transform_split(split_name, split) for split_name, split in dataset.items()}), metadata
 
 
 def _mutation_config_from_dict(config: dict[str, Any] | None) -> MutationConfig:
@@ -315,7 +328,7 @@ def build_and_cache_dataset(config: dict[str, Any]) -> DatasetDict:
         return cached
 
     raw_dataset = load_dataset_from_config(config)
-    raw_dataset = _apply_label_transform(raw_dataset, dataset_cfg)
+    raw_dataset, label_metadata = _apply_label_transform(raw_dataset, dataset_cfg)
     raw_dataset = _apply_text_perturbation(raw_dataset, dataset_cfg)
     tokenizer = AutoTokenizer.from_pretrained(config["model"]["name"])
     tokenized = tokenize_dataset_dict(
@@ -328,6 +341,7 @@ def build_and_cache_dataset(config: dict[str, Any]) -> DatasetDict:
     )
     if label_column != "labels" and "labels" not in tokenized["train"].column_names:
         tokenized = tokenized.rename_column(label_column, "labels")
+    expected_meta["label_metadata"] = label_metadata
     save_tokenized_dataset_cache(
         tokenized,
         str(cache_dir),
