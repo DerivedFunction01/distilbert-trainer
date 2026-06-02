@@ -22,7 +22,8 @@
     "label_transform": {
       "type": "single_to_multi_label",
       "source_column": "label",
-      "output_column": "labels"
+      "output_column": "labels",
+      "reserve_fraction": 0.1
     },
     "source": {
       "type": "hf_dataset",

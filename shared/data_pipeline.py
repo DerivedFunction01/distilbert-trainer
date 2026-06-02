@@ -94,6 +94,7 @@ def _apply_label_transform(dataset: DatasetDict, dataset_cfg: dict[str, Any]) ->
 
     source_column = label_transform.get("source_column", dataset_cfg["label_column"])
     output_column = label_transform.get("output_column", "labels")
+    reserve_fraction = float(label_transform.get("reserve_fraction", 0.0))
     target_labels = label_transform.get("target_labels")
     label_map = label_transform.get("label_map")
     if target_labels is None and label_map is None:
@@ -102,6 +103,10 @@ def _apply_label_transform(dataset: DatasetDict, dataset_cfg: dict[str, Any]) ->
         raise ValueError("label_transform.target_labels must be a non-empty list or omitted for inference")
     if not isinstance(label_map, dict) or not label_map:
         raise ValueError("label_transform.label_map must be a non-empty object or omitted for inference")
+    if not 0.0 <= reserve_fraction <= 1.0:
+        raise ValueError("label_transform.reserve_fraction must be in the range [0.0, 1.0]")
+    if reserve_fraction > 0.0 and len(target_labels) < 2:
+        raise ValueError("label_transform.reserve_fraction requires at least 2 target labels")
 
     target_label_to_index = {_to_label_lookup_key(label): index for index, label in enumerate(target_labels)}
     label_to_indices: dict[str, list[int]] = {}
@@ -115,19 +120,33 @@ def _apply_label_transform(dataset: DatasetDict, dataset_cfg: dict[str, Any]) ->
             target_label_to_index=target_label_to_index,
         )
 
-    def transform_split(split: Dataset) -> Dataset:
+    def transform_split(split_name: str, split: Dataset) -> Dataset:
+        seed_offset = abs(hash(split_name)) % (2**32)
+
         def map_row(row: dict[str, Any]) -> dict[str, Any]:
             row = dict(row)
-            row[output_column] = _build_multilabel_vector(
+            labels = _build_multilabel_vector(
                 row[source_column],
                 label_to_indices=label_to_indices,
                 num_labels=len(target_labels),
             )
+            if reserve_fraction > 0.0 and len(target_labels) > 1:
+                rng = random.Random(int(dataset_cfg.get("seed", 42)) + seed_offset + int(row.get("__row_index__", 0)))
+                if rng.random() < reserve_fraction:
+                    primary_indices = label_to_indices[_to_label_lookup_key(row[source_column])]
+                    secondary_candidates = [index for index in range(len(target_labels)) if index not in primary_indices]
+                    if secondary_candidates:
+                        labels[rng.choice(secondary_candidates)] = 1
+            row[output_column] = labels
             return row
 
-        return split.map(map_row)
+        indexed_split = split.add_column("__row_index__", list(range(len(split))))
+        transformed = indexed_split.map(map_row)
+        if "__row_index__" in transformed.column_names:
+            transformed = transformed.remove_columns(["__row_index__"])
+        return transformed
 
-    return DatasetDict({split_name: transform_split(split) for split_name, split in dataset.items()})
+    return DatasetDict({split_name: transform_split(split_name, split) for split_name, split in dataset.items()})
 
 
 def _mutation_config_from_dict(config: dict[str, Any] | None) -> MutationConfig:
