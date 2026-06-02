@@ -99,6 +99,16 @@ def _build_label_display_names(
     return display_names
 
 
+def _cast_multilabel_labels_to_float(dataset: DatasetDict) -> DatasetDict:
+    def cast_split(split: Dataset) -> Dataset:
+        return split.map(
+            lambda row: {"labels": [float(value) for value in row["labels"]]},
+            desc="Casting multi-label targets to float",
+        )
+
+    return DatasetDict({split_name: cast_split(split) for split_name, split in dataset.items()})
+
+
 def _apply_label_transform(
     dataset: DatasetDict,
     dataset_cfg: dict[str, Any],
@@ -359,6 +369,8 @@ def build_and_cache_dataset(config: dict[str, Any]) -> DatasetDict:
         max_length=config["tokenization"]["max_length"],
         padding=config["tokenization"].get("padding", "max_length"),
     )
+    if config["task_type"] == "multi_label_classification":
+        tokenized = _cast_multilabel_labels_to_float(tokenized)
     if label_column != "labels" and "labels" not in tokenized["train"].column_names:
         tokenized = tokenized.rename_column(label_column, "labels")
     expected_meta["label_metadata"] = label_metadata

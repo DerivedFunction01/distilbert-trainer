@@ -259,12 +259,6 @@ def main() -> None:
 
     for split_name in ("train", "val", "test"):
         ds[split_name].set_format("torch", columns=["input_ids", "attention_mask", "labels"])
-        if task_type == "multi_label_classification":
-            ds[split_name] = ds[split_name].map(
-                lambda row: {"labels": [float(value) for value in row["labels"]]},
-                desc=f"Casting labels for {split_name}",
-            )
-            ds[split_name].set_format("torch", columns=["input_ids", "attention_mask", "labels"])
 
     print(f"Loading model: {model_cfg['name']}")
     model_kwargs = {"token": hf_token}
