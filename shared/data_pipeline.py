@@ -161,6 +161,8 @@ def _apply_label_transform(dataset: DatasetDict, dataset_cfg: dict[str, Any]) ->
                 for target_index in pair_target_indices:
                     labels[target_index] = 1
             row[output_column] = labels
+            if source_column != output_column and source_column in row:
+                del row[source_column]
             transformed_rows.append(row)
 
         if not transformed_rows:
@@ -321,7 +323,6 @@ def build_and_cache_dataset(config: dict[str, Any]) -> DatasetDict:
         tokenizer=tokenizer,
         kind=config["tokenization"]["kind"],
         text_columns=tuple(dataset_cfg["text_columns"]),
-        label_columns=tuple(config["tokenization"]["label_columns"]),
         max_length=config["tokenization"]["max_length"],
         padding=config["tokenization"].get("padding", "max_length"),
     )

@@ -42,8 +42,7 @@
   "tokenization": {
     "kind": "text",
     "max_length": 512,
-    "padding": "max_length",
-    "label_columns": ["label", "labels", "binary_label", "category_labels"]
+    "padding": "max_length"
   },
   "training": {
     "num_train_epochs": 2,
