@@ -18,6 +18,8 @@ from shared.tokenization import (
 )
 from text_utils import MutationConfig, TextMutator
 
+CACHE_FORMAT_VERSION = 2
+
 
 def _resolve_path(value: str | Path) -> Path:
     return resolve_repo_path(value)
@@ -348,6 +350,7 @@ def build_and_cache_dataset(config: dict[str, Any]) -> DatasetDict:
     expected_meta = {
         "dataset": dataset_cfg,
         "tokenization": config["tokenization"],
+        "cache_format_version": CACHE_FORMAT_VERSION,
     }
     cached = load_tokenized_dataset_cache(
         str(cache_dir),

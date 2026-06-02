@@ -22,6 +22,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
+    default_data_collator,
     Trainer,
     TrainingArguments,
 )
@@ -213,6 +214,21 @@ def load_label_metadata(cache_dir: Path) -> dict[str, object] | None:
     return label_metadata
 
 
+def make_data_collator(task_type: str):
+    if task_type != "multi_label_classification":
+        return default_data_collator
+
+    def collate(features):
+        labels = torch.stack(
+            [torch.as_tensor(feature["labels"], dtype=torch.float32) for feature in features]
+        )
+        batch = default_data_collator([{k: v for k, v in feature.items() if k != "labels"} for feature in features])
+        batch["labels"] = labels
+        return batch
+
+    return collate
+
+
 def main() -> None:
     config = load_config()
     model_cfg = config["model"]
@@ -310,6 +326,7 @@ def main() -> None:
         ),
         train_dataset=ds["train"],
         eval_dataset=ds["val"],
+        data_collator=make_data_collator(task_type),
         compute_metrics=compute_metrics,
     )
 
