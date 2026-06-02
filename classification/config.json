@@ -2,11 +2,13 @@
   "task_type": "multi_label_classification",
   "model": {
     "name": "distilbert/distilbert-base-uncased",
-    "output_dir": "distilbert-classifier"
+    "output_dir": "distilbert-emotions"
   },
   "dataset": {
     "label_column": "label",
-    "text_columns": ["text"],
+    "text_columns": [
+      "text"
+    ],
     "text_perturbation": {
       "source_column": "text",
       "output_column": "text",
@@ -15,7 +17,7 @@
       "mutation_config": {
         "keep_original": true,
         "sentence_mutation_prob": 0.25,
-        "word_casing_prob": 0.2,
+        "word_casing_prob": 0.0,
         "char_noise_prob": 0.15
       }
     },
@@ -25,21 +27,21 @@
       "output_column": "labels",
       "reserve_fraction": 0.1,
       "label_names": {
-          "0": "sadness",
-          "1": "joy",
-          "2": "love",
-          "3": "anger",
-          "4": "fear",
-          "5": "surprise"
+        "0": "sadness",
+        "1": "joy",
+        "2": "love",
+        "3": "anger",
+        "4": "fear",
+        "5": "surprise"
       }
     },
     "source": {
       "type": "hf_dataset",
-      "dataset_name": "rotten_tomatoes",
-      "config": null,
+      "dataset_name": "dair-ai/emotion",
+      "config": "unsplit",
       "split": "train"
     },
-    "cache_dir": ".cache/test/tokenized",
+    "cache_dir": ".cache/emotions/tokenized",
     "split_strategy": {
       "type": "random",
       "val_size": 0.1,
