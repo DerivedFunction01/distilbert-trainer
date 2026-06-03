@@ -70,6 +70,7 @@ def _infer_label_transform(
     dataset: DatasetDict,
     *,
     source_column: str,
+    neutral_label_value: str = "__neutral__",
 ) -> tuple[list[Any], dict[str, list[Any]]]:
     seen: set[str] = set()
     target_labels: list[Any] = []
@@ -79,6 +80,8 @@ def _infer_label_transform(
         for row in tqdm(split, desc=f"Inferring labels from {split_name}", unit="row"):
             source_label = row[source_column]
             key = _to_label_lookup_key(source_label)
+            if key == neutral_label_value:
+                continue
             if key in seen:
                 continue
             seen.add(key)
@@ -293,7 +296,11 @@ def _apply_label_transform(
     label_names = label_transform.get("label_names")
     neutral_label = label_transform.get("neutral_label", "__neutral__")
     if target_labels is None and label_map is None:
-        target_labels, label_map = _infer_label_transform(dataset, source_column=source_column)
+        target_labels, label_map = _infer_label_transform(
+            dataset,
+            source_column=source_column,
+            neutral_label_value=neutral_label_value,
+        )
     if not isinstance(target_labels, list) or not target_labels:
         raise ValueError("label_transform.target_labels must be a non-empty list or omitted for inference")
     if not isinstance(label_map, dict) or not label_map:
