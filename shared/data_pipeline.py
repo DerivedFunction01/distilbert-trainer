@@ -101,6 +101,16 @@ def _build_label_display_names(
     return display_names
 
 
+def _combine_text_values(primary: Any, secondary: Any, *, separator: str = " ") -> Any:
+    if isinstance(primary, str) and isinstance(secondary, str):
+        primary = primary.strip()
+        secondary = secondary.strip()
+        if primary and secondary:
+            return f"{primary}{separator}{secondary}"
+        return primary or secondary
+    return primary
+
+
 def _cast_multilabel_labels_to_float(dataset: DatasetDict) -> DatasetDict:
     def cast_split(split: Dataset) -> Dataset:
         return split.map(
@@ -125,6 +135,7 @@ def _apply_label_transform(
     source_column = label_transform.get("source_column", dataset_cfg["label_column"])
     output_column = label_transform.get("output_column", "labels")
     reserve_fraction = float(label_transform.get("reserve_fraction", 0.0))
+    reserve_separator = str(label_transform.get("reserve_separator", " "))
     target_labels = label_transform.get("target_labels")
     label_map = label_transform.get("label_map")
     label_names = label_transform.get("label_names")
@@ -140,6 +151,9 @@ def _apply_label_transform(
         raise ValueError("label_transform.reserve_fraction must be in the range [0.0, 1.0]")
     if reserve_fraction > 0.0 and len(target_labels) < 2:
         raise ValueError("label_transform.reserve_fraction requires at least 2 target labels")
+    text_columns = tuple(dataset_cfg.get("text_columns", ()))
+    if reserve_fraction > 0.0 and not text_columns:
+        raise ValueError("label_transform.reserve_fraction requires dataset.text_columns to be set")
 
     target_label_to_index = {_to_label_lookup_key(label): index for index, label in enumerate(target_labels)}
     label_to_indices: dict[str, list[int]] = {}
@@ -162,7 +176,7 @@ def _apply_label_transform(
                 source_label_order.append(key)
             source_label_rows[key].append((split_name, row_index, dict(row)))
 
-    reserve_assignments: dict[tuple[str, int], str] = {}
+    reserve_assignments: dict[tuple[str, int], tuple[str, dict[str, Any]]] = {}
     if reserve_fraction > 0.0:
         reserve_rng = random.Random(int(dataset_cfg.get("seed", 42)))
         for label_key, rows in source_label_rows.items():
@@ -174,7 +188,10 @@ def _apply_label_transform(
                 raise ValueError("reserve_fraction requires at least 2 distinct labels")
             sampled_rows = reserve_rng.sample(rows, k=reserve_count)
             for split_name, row_index, _row in sampled_rows:
-                reserve_assignments[(split_name, row_index)] = reserve_rng.choice(other_labels)
+                partner_label = reserve_rng.choice(other_labels)
+                partner_rows = source_label_rows[partner_label]
+                partner_row = dict(reserve_rng.choice(partner_rows)[2])
+                reserve_assignments[(split_name, row_index)] = (partner_label, partner_row)
 
     def transform_split(split_name: str, split: Dataset) -> Dataset:
         transformed_rows: list[dict[str, Any]] = []
@@ -188,11 +205,15 @@ def _apply_label_transform(
             )
             mixed_target = reserve_assignments.get((split_name, row_index))
             if mixed_target is not None:
-                pair_target_indices = label_to_indices.get(mixed_target)
+                partner_label, partner_row = mixed_target
+                pair_target_indices = label_to_indices.get(partner_label)
                 if pair_target_indices is None:
-                    raise KeyError(f"Missing multi-label mapping for source label: {mixed_target!r}")
+                    raise KeyError(f"Missing multi-label mapping for source label: {partner_label!r}")
                 for target_index in pair_target_indices:
                     labels[target_index] = 1
+                for column in text_columns:
+                    if column in row and column in partner_row:
+                        row[column] = _combine_text_values(row[column], partner_row[column], separator=reserve_separator)
             row[output_column] = labels
             if source_column != output_column and source_column in row:
                 del row[source_column]
