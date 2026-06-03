@@ -73,7 +73,7 @@
         "type": "hf_dataset",
         "dataset_name": "cais/mmlu",
         "config": "all",
-        "split": "train",
+        "split": "auxiliary_train",
         "text_column": "question"
       }
     ]
