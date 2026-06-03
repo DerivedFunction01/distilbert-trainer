@@ -338,7 +338,7 @@ def main() -> None:
     trainer.save_model(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
     print(f"\nModel saved to: {output_dir}")
-    if 
+    if training_cfg["push_to_hub"]:
         trainer.push_to_hub()
 
 
