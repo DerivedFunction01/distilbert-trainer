@@ -41,6 +41,8 @@ def _build_multilabel_vector(
     labels = [0] * num_labels
     key = _to_label_lookup_key(source_label)
     if key not in label_to_indices:
+        if key == "__neutral__":
+            return [0] * num_labels
         raise KeyError(f"Missing multi-label mapping for source label: {source_label!r}")
 
     for index in label_to_indices[key]:
@@ -161,6 +163,18 @@ def _apply_label_aliases(dataset: DatasetDict, aliases: dict[str, Any]) -> Datas
     return DatasetDict({split_name: transform_split(split) for split_name, split in dataset.items()})
 
 
+def _apply_neutral_labels(dataset: DatasetDict, source_column: str) -> DatasetDict:
+    def transform_split(split: Dataset) -> Dataset:
+        def map_row(row: dict[str, Any]) -> dict[str, Any]:
+            row = dict(row)
+            row[source_column] = "__neutral__"
+            return row
+
+        return split.map(map_row)
+
+    return DatasetDict({split_name: transform_split(split) for split_name, split in dataset.items()})
+
+
 def _load_single_source_dataset(
     source: dict[str, Any],
     *,
@@ -191,6 +205,8 @@ def _load_single_source_dataset(
     if source_type == "local_parquet":
         loaded = load_from_disk(str(_resolve_path(source["path"])))
         if isinstance(loaded, DatasetDict):
+            if source.get("neutral"):
+                return _apply_neutral_labels(loaded, dataset_cfg["label_column"])
             return loaded
         raise TypeError("Expected DatasetDict from local_parquet source")
 
@@ -209,7 +225,10 @@ def _load_sources_from_config(config: dict[str, Any]) -> DatasetDict:
     for source in sources:
         source_dataset = _load_single_source_dataset(source, dataset_cfg=dataset_cfg)
         aliases = source.get("label_aliases") or source.get("label_names_map") or {}
-        source_dataset = _apply_label_aliases(source_dataset, aliases)
+        if source.get("neutral"):
+            source_dataset = _apply_neutral_labels(source_dataset, dataset_cfg["label_column"])
+        else:
+            source_dataset = _apply_label_aliases(source_dataset, aliases)
         for split_name, split in source_dataset.items():
             loaded_splits.setdefault(split_name, []).append(split)
 
@@ -239,6 +258,7 @@ def _apply_label_transform(
     target_labels = label_transform.get("target_labels")
     label_map = label_transform.get("label_map")
     label_names = label_transform.get("label_names")
+    neutral_label = label_transform.get("neutral_label", "__neutral__")
     if target_labels is None and label_map is None:
         target_labels, label_map = _infer_label_transform(dataset, source_column=source_column)
     if not isinstance(target_labels, list) or not target_labels:
@@ -253,6 +273,8 @@ def _apply_label_transform(
         raise ValueError("label_transform.same_label_pack_size must be >= 1")
     if reserve_fraction > 0.0 and len(target_labels) < 2:
         raise ValueError("label_transform.reserve_fraction requires at least 2 target labels")
+    if neutral_label is None:
+        neutral_label = "__neutral__"
     text_columns = tuple(dataset_cfg.get("text_columns", ()))
     if reserve_fraction > 0.0 and not text_columns:
         raise ValueError("label_transform.reserve_fraction requires dataset.text_columns to be set")
@@ -368,6 +390,7 @@ def _apply_label_transform(
         "output_column": output_column,
         "task_type": "multi_label_classification",
         "raw_labels": [_to_label_lookup_key(label) for label in target_labels],
+        "neutral_label": _to_label_lookup_key(neutral_label),
     }
     return DatasetDict({split_name: transform_split(split_name, split) for split_name, split in dataset.items()}), metadata
 

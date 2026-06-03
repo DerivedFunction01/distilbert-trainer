@@ -65,6 +65,14 @@
         "label_aliases": {
           "sad": "sadness"
         }
+      },
+      {
+        "name": "neutral",
+        "neutral": true,
+        "type": "hf_dataset",
+        "dataset_name": "some/neutral-dataset",
+        "config": "default",
+        "split": "train"
       }
     ]
   },
