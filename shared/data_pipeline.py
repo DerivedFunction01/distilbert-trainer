@@ -228,6 +228,8 @@ def _load_sources_from_config(config: dict[str, Any]) -> DatasetDict:
 
     loaded_splits: dict[str, list[Dataset]] = {}
     for source in sources:
+        if not source.get("enabled", True):
+            continue
         source_dataset = _load_single_source_dataset(source, dataset_cfg=dataset_cfg)
         source_text_column = source.get("text_column", dataset_cfg["text_columns"][0])
         source_label_column = source.get("label_column")
@@ -244,6 +246,9 @@ def _load_sources_from_config(config: dict[str, Any]) -> DatasetDict:
             if source_label_column and source_label_column != dataset_cfg["label_column"] and source_label_column in split.column_names:
                 split = split.rename_column(source_label_column, dataset_cfg["label_column"])
             loaded_splits.setdefault(split_name, []).append(split)
+
+    if not loaded_splits:
+        raise ValueError("No enabled dataset sources were found in dataset.sources")
 
     combined = {
         split_name: concatenate_datasets(splits)

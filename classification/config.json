@@ -45,6 +45,7 @@
       {
         "name": "canonical",
         "canonical": true,
+        "enabled": true,
         "type": "hf_dataset",
         "dataset_name": "dair-ai/emotion",
         "config": "unsplit",
@@ -54,6 +55,7 @@
       },
       {
         "name": "augmentation",
+        "enabled": false,
         "type": "hf_dataset",
         "dataset_name": "some/augmentation-dataset",
         "config": "default",
@@ -67,6 +69,7 @@
       {
         "name": "neutral",
         "neutral": true,
+        "enabled": true,
         "type": "hf_dataset",
         "dataset_name": "cais/mmlu",
         "config": "all",
