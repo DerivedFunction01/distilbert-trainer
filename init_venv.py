@@ -482,6 +482,13 @@ def main():
         action="store_true",
         help="Reinstall PyTorch even if locked.",
     )
+    parser.add_argument(
+        "--choice",
+        type=str,
+        default=None,
+        choices=["0", "1", "2", "3", "4"],
+        help="Select a menu choice immediately and exit without prompting.",
+    )
     args = parser.parse_args()
 
     if args.no_venv:
@@ -505,10 +512,7 @@ def main():
     if USE_VENV:
         create_venv()
 
-    while True:
-        show_menu()
-        choice = input("\nEnter your choice (0-5): ").strip()
-
+    def run_choice(choice: str) -> None:
         if choice == "0":
             print("\nBasic setup starting...")
             install_packages(BASE_PACKAGES, "base packages")
@@ -516,7 +520,7 @@ def main():
             print("\n✅ Basic setup complete!")
             sys.exit(0)
 
-        elif choice == "1":
+        if choice == "1":
             print("\nSetting up for Classification Server...")
             if is_torch_locked() and not REINSTALL_TORCH:
                 print("🧱 PyTorch is already locked. Skipping PyTorch install.")
@@ -528,7 +532,7 @@ def main():
             print("\n✅ Classification Server setup complete!")
             sys.exit(0)
 
-        elif choice == "2":
+        if choice == "2":
             print("\nStarting Full Training Setup...")
             if is_torch_locked() and not REINSTALL_TORCH:
                 print("🧱 PyTorch is already locked. Skipping PyTorch install.")
@@ -540,17 +544,27 @@ def main():
             print("\n✅ Full Training Environment setup complete!")
             sys.exit(0)
 
-        elif choice == "3":
+        if choice == "3":
             check_installation()
+            return
 
-        elif choice == "4":
+        if choice == "4":
             print("\n🔄 Reinstalling PyTorch...")
             TORCH_LOCK_FILE.unlink(missing_ok=True)
             install_pytorch()
+            return
 
-        else:
-            print("\n👋 Goodbye!")
-            break
+        print("\n👋 Goodbye!")
+        sys.exit(0)
+
+    if args.choice is not None:
+        run_choice(args.choice)
+        return
+
+    while True:
+        show_menu()
+        choice = input("\nEnter your choice (0-5): ").strip()
+        run_choice(choice)
 
 
 if __name__ == "__main__":
