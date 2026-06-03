@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import json
-import shutil
 from pathlib import Path
 
-from shared.archive import cache_has_archive, cache_has_tokenized_cache, ensure_cache_archive_extracted
+from shared.archive import (
+    cache_has_archive,
+    cache_has_tokenized_cache,
+    ensure_cache_archive_extracted,
+    zip_cache_subdir,
+)
+from shared.config import load_json_config
+from shared.data_pipeline import build_tokenized_dataset_cache
 from shared.paths import ARTIFACT_ROOT, CACHE_ROOT
 from tqdm.auto import tqdm
 
@@ -29,44 +34,41 @@ def build_all_sources() -> list[Path]:
 
     results: list[Path] = []
     for subdir_name in tqdm(subdirs, desc="Archiving caches", unit="cache"):
-        results.append(zip_cache_subdir(subdir_name))
+        build_cache_subdir(subdir_name)
+        results.append(ARTIFACT_ROOT / f"distilbert_{subdir_name}_cache.zip")
     return results
 
 
 def build_cache_subdir(subdir_name: str) -> None:
-    raise ValueError(f"Unknown cache subdir: {subdir_name}")
+    config_path = Path("classification/.config.json")
+    if not config_path.exists():
+        config_path = Path("classification/config.json")
+    if not config_path.exists():
+        raise FileNotFoundError(
+            "No classification config found. Expected classification/.config.json or classification/config.json"
+        )
+
+    config = load_json_config(config_path)
+    dataset_cfg = config.get("dataset", {})
+    cache_dir = dataset_cfg.get("cache_dir")
+    if cache_dir is None:
+        raise ValueError("classification config does not define dataset.cache_dir")
+
+    expected_subdir = Path(cache_dir).parent.name
+    if expected_subdir != subdir_name:
+        raise ValueError(
+            f"Config cache_dir {cache_dir!r} does not match requested subdir {subdir_name!r}"
+        )
+
+    print(f"Building tokenized cache for {subdir_name} from {config_path} ...")
+    build_tokenized_dataset_cache(config)
 
 
 def validate_tokenized_cache(subdir_name: str) -> Path:
     tokenized_dir = CACHE_ROOT / subdir_name / "tokenized"
     if not tokenized_dir.exists():
         raise FileNotFoundError(f"Tokenized cache directory does not exist: {tokenized_dir}")
-
-    meta_path = tokenized_dir / "dataset.meta.json"
-    if not meta_path.exists():
-        raise FileNotFoundError(f"Tokenized cache metadata not found: {meta_path}")
-
-    with meta_path.open(encoding="utf-8") as f:
-        json.load(f)
-
     return tokenized_dir
-
-
-def zip_cache_subdir(subdir_name: str) -> Path:
-    ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
-    tokenized_dir = validate_tokenized_cache(subdir_name)
-
-    archive_base = ARTIFACT_ROOT / f"distilbert_{subdir_name}_cache"
-    archive_path = Path(
-        shutil.make_archive(
-            str(archive_base),
-            "zip",
-            root_dir=CACHE_ROOT,
-            base_dir=f"{subdir_name}/tokenized",
-        )
-    )
-    print(f"Created cache archive: {archive_path}")
-    return archive_path
 
 
 def reconcile_cache_subdir(subdir_name: str) -> Path:
@@ -87,7 +89,7 @@ def reconcile_cache_subdir(subdir_name: str) -> Path:
 
     print(f"{subdir_name}: cache and archive both missing, rebuilding cache locally")
     build_cache_subdir(subdir_name)
-    return zip_cache_subdir(subdir_name)
+    return ARTIFACT_ROOT / f"distilbert_{subdir_name}_cache.zip"
 
 
 def parse_args() -> argparse.Namespace:

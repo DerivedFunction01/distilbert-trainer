@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import json
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -80,6 +81,35 @@ def cache_has_archive(subdir_name: str, *, artifact_root: Path = ARTIFACT_ROOT) 
 
 def cache_has_tokenized_cache(subdir_name: str, *, cache_root: Path = CACHE_ROOT) -> bool:
     return _has_tokenized_cache(cache_root / subdir_name / "tokenized")
+
+
+def zip_cache_subdir(
+    subdir_name: str,
+    *,
+    artifact_root: Path = ARTIFACT_ROOT,
+    cache_root: Path = CACHE_ROOT,
+) -> Path:
+    tokenized_dir = cache_root / subdir_name / "tokenized"
+    if not _has_tokenized_cache(tokenized_dir):
+        raise FileNotFoundError(f"Tokenized cache directory does not exist or is empty: {tokenized_dir}")
+
+    meta_path = tokenized_dir / "dataset.meta.json"
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Tokenized cache metadata not found: {meta_path}")
+    with meta_path.open(encoding="utf-8") as f:
+        json.load(f)
+
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    archive_base = artifact_root / f"distilbert_{subdir_name}_cache"
+    archive_path = Path(
+        shutil.make_archive(
+            str(archive_base),
+            "zip",
+            root_dir=cache_root,
+            base_dir=f"{subdir_name}/tokenized",
+        )
+    )
+    return archive_path
 
 
 def ensure_cache_archives_extracted(

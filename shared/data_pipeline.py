@@ -16,6 +16,7 @@ from shared.tokenization import (
     save_tokenized_dataset_cache,
     tokenize_dataset_dict,
 )
+from shared.archive import zip_cache_subdir
 from text_utils import MutationConfig, TextMutator
 
 CACHE_FORMAT_VERSION = 2
@@ -405,4 +406,10 @@ def build_and_cache_dataset(config: dict[str, Any]) -> DatasetDict:
         meta=expected_meta,
         overwrite=True,
     )
+    zip_cache_subdir(cache_dir.parent.name)
     return tokenized
+
+
+def build_tokenized_dataset_cache(config: dict[str, Any]) -> DatasetDict:
+    """Build or load the tokenized dataset cache without starting training."""
+    return build_and_cache_dataset(config)
