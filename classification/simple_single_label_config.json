@@ -1,0 +1,52 @@
+{
+  "task_type": "classification",
+  "model": {
+    "name": "distilbert/distilbert-base-uncased",
+    "output_dir": "distilbert-minimal"
+  },
+  "dataset": {
+    "label_column": "label",
+    "text_columns": [
+      "text"
+    ],
+    "cache_dir": ".cache/minimal/tokenized",
+    "split_strategy": {
+      "type": "random",
+      "val_size": 0.1,
+      "test_size": 0.1
+    },
+    "seed": 42,
+    "source": {
+      "name": "my_dataset",
+      "enabled": true,
+      "type": "hf_dataset",
+      "dataset_name": "your_org/your_dataset",
+      "config": "default",
+      "split": "train",
+      "text_column": "text",
+      "label_column": "label"
+    }
+  },
+  "tokenization": {
+    "kind": "text",
+    "max_length": 512,
+    "padding": "max_length"
+  },
+  "training": {
+    "num_train_epochs": 3,
+    "learning_rate": 2e-5,
+    "per_device_train_batch_size": 8,
+    "per_device_eval_batch_size": 4,
+    "gradient_accumulation_steps": 1,
+    "evals_per_epoch": 1,
+    "saves_per_epoch": 1,
+    "logging_steps": 100,
+    "weight_decay": 0.01,
+    "fp16": true,
+    "dataloader_num_workers": 2,
+    "seed": 42,
+    "threshold": 0.5,
+    "metric_prefix": "",
+    "push_to_hub": false
+  }
+}
