@@ -148,6 +148,47 @@ def _cast_multilabel_labels_to_float(dataset: DatasetDict, *, label_column: str 
     return DatasetDict({split_name: cast_split(split) for split_name, split in dataset.items()})
 
 
+def _normalize_score_dict_labels(
+    dataset: DatasetDict,
+    *,
+    label_column: str,
+) -> tuple[DatasetDict, dict[str, Any] | None]:
+    label_order: list[str] | None = None
+
+    for split in dataset.values():
+        for row in split:
+            value = row.get(label_column)
+            if isinstance(value, dict):
+                label_order = [str(key) for key in value.keys()]
+                break
+        if label_order is not None:
+            break
+
+    if label_order is None:
+        return dataset, None
+
+    def map_row(row: dict[str, Any]) -> dict[str, Any]:
+        row = dict(row)
+        value = row.get(label_column)
+        if isinstance(value, dict):
+            row[label_column] = [float(value.get(name, 0.0)) for name in label_order]
+        return row
+
+    transformed = DatasetDict(
+        {split_name: split.map(map_row, desc="Normalizing score-dict labels") for split_name, split in dataset.items()}
+    )
+    metadata = {
+        "label2id": {name: index for index, name in enumerate(label_order)},
+        "id2label": {str(index): name for index, name in enumerate(label_order)},
+        "num_labels": len(label_order),
+        "label_column": label_column,
+        "output_column": "labels",
+        "task_type": "multi_label_classification",
+        "raw_labels": label_order,
+    }
+    return transformed, metadata
+
+
 def _apply_label_aliases(
     dataset: DatasetDict,
     aliases: dict[str, Any],
@@ -655,6 +696,10 @@ def build_and_cache_dataset(config: dict[str, Any]) -> DatasetDict:
 
     raw_dataset = load_dataset_from_config(config)
     raw_dataset, label_metadata = _apply_label_transform(raw_dataset, dataset_cfg)
+    if config["task_type"] == "multi_label_classification":
+        raw_dataset, score_dict_metadata = _normalize_score_dict_labels(raw_dataset, label_column=dataset_cfg["label_column"])
+        if score_dict_metadata is not None:
+            label_metadata = score_dict_metadata if label_metadata is None else {**label_metadata, **score_dict_metadata}
     raw_dataset = _apply_text_perturbation(raw_dataset, dataset_cfg)
     tokenizer = AutoTokenizer.from_pretrained(config["model"]["name"])
     tokenized = tokenize_dataset_dict(
