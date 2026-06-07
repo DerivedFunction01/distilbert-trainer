@@ -38,7 +38,10 @@ BASE_PACKAGES = [
     
 CUSTOM_PACKAGES = [
     "pysbd",
-    "nltk"
+    "nltk",
+    "tiktoken",
+    "sentencepiece",
+    "tensorboard"
 ]
 
 # Packages for the classification server
