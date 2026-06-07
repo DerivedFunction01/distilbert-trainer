@@ -117,6 +117,7 @@ def make_training_args(
         warmup_steps=warmup_steps,
         weight_decay=training["weight_decay"],
         fp16=training["fp16"],
+        bf16=training["bf16"],
         dataloader_num_workers=training["dataloader_num_workers"],
         eval_strategy="steps",
         save_strategy="steps",
